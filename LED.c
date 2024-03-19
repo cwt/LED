@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <termios.h>
+#define BAUD_RATE B10000
 #endif
 
 // Define the BEGIN byte for communication
