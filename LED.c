@@ -51,24 +51,24 @@ static unsigned char checksum(unsigned char mode, unsigned char brightness, unsi
 }
 
 // Function to send data to the serial port
-static void sendData(int fd, unsigned char data, int delay) {
+static void sendData(void* fd, unsigned char data, int delay) {
 #ifdef _WIN32
     DWORD bytesWritten;
     WriteFile((HANDLE)fd, &data, sizeof(data), &bytesWritten, NULL);
     Sleep(delay);
 #else
-    write(fd, &data, sizeof(data));
+    write((int)fd, &data, sizeof(data));
     usleep(delay * 1000);
 #endif
 }
 
 // Function to open and configure the serial port
-static int openSerialPort(const char* serial_port) {
+static void* openSerialPort(const char* serial_port) {
 #ifdef _WIN32
     HANDLE hSerial = CreateFileA(serial_port, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hSerial == INVALID_HANDLE_VALUE) {
         printf("Failed to open serial port %s\n", serial_port);
-        return -1;
+        return NULL;
     }
 
     DCB dcb = {0};
@@ -88,32 +88,32 @@ static int openSerialPort(const char* serial_port) {
     timeouts.WriteTotalTimeoutMultiplier = 10;
     SetCommTimeouts(hSerial, &timeouts);
 
-    return (int)hSerial;
+    return (void*)hSerial;
 #else
     int serial_fd = open(serial_port, O_RDWR | O_NOCTTY | O_NDELAY);
     if (serial_fd < 0) {
         printf("Failed to open serial port %s\n", serial_port);
-        return -1;
+        return NULL;
     }
 
     struct termios options;
     tcgetattr(serial_fd, &options);
-    cfsetispeed(&options, B10000);
-    cfsetospeed(&options, B10000);
+    cfsetispeed(&options, BAUD_RATE);
+    cfsetospeed(&options, BAUD_RATE);
     options.c_cflag &= ~PARENB;
     options.c_cflag &= ~CSTOPB;
     options.c_cflag &= ~CSIZE;
     options.c_cflag |= CS8;
     tcsetattr(serial_fd, TCSANOW, &options);
 
-    return serial_fd;
+    return (void*)(intptr_t)serial_fd;
 #endif
 }
 
 // Function to control the LED device via the serial port
 static void control(const char* serial_port, unsigned char mode, unsigned char brightness, unsigned char speed) {
-    int fd = openSerialPort(serial_port);
-    if (fd < 0) {
+    void* fd = openSerialPort(serial_port);
+    if (fd == NULL) {
         return;
     }
 
@@ -126,7 +126,7 @@ static void control(const char* serial_port, unsigned char mode, unsigned char b
 #ifdef _WIN32
     CloseHandle((HANDLE)fd);
 #else
-    close(fd);
+    close((int)(intptr_t)fd);
 #endif
 }
 
