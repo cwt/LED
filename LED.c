@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <termios.h>
-#define BAUD_RATE B10000
+#define BAUD_RATE B9600
 #endif
 
 // Define the BEGIN byte for communication
@@ -75,7 +75,7 @@ static void* openSerialPort(const char* serial_port) {
     DCB dcb = {0};
     dcb.DCBlength = sizeof(dcb);
     GetCommState(hSerial, &dcb);
-    dcb.BaudRate = 10000;
+    dcb.BaudRate = 9600;
     dcb.ByteSize = 8;
     dcb.StopBits = ONESTOPBIT;
     dcb.Parity = NOPARITY;
