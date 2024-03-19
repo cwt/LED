@@ -98,8 +98,8 @@ static int openSerialPort(const char* serial_port) {
 
     struct termios options;
     tcgetattr(serial_fd, &options);
-    cfsetispeed(&options, B9600);
-    cfsetospeed(&options, B9600);
+    cfsetispeed(&options, B10000);
+    cfsetospeed(&options, B10000);
     options.c_cflag &= ~PARENB;
     options.c_cflag &= ~CSTOPB;
     options.c_cflag &= ~CSIZE;
