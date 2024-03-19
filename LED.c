@@ -58,7 +58,7 @@ static void sendData(void* fd, unsigned char data, int delay) {
     WriteFile((HANDLE)fd, &data, sizeof(data), &bytesWritten, NULL);
     Sleep(delay);
 #else
-    write((int)fd, &data, sizeof(data));
+    write((int)(intptr_t)fd, &data, sizeof(data));  // Adjusted the cast to intptr_t
     usleep(delay * 1000);
 #endif
 }
