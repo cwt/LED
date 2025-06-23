@@ -5,9 +5,11 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <sys/ioctl.h>
+#include <asm-generic/termbits.h>
+#include <asm-generic/ioctls.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <termios.h>
 #endif
 
 // Fix baud rate to 10000
@@ -99,15 +101,30 @@ static void* openSerialPort(const char* serial_port) {
         return NULL;
     }
 
-    struct termios options;
-    tcgetattr(serial_fd, &options);
-    cfsetispeed(&options, BAUD_RATE);
-    cfsetospeed(&options, BAUD_RATE);
+    struct termios2 {
+    	tcflag_t c_iflag;
+    	tcflag_t c_oflag;
+    	tcflag_t c_cflag;
+    	tcflag_t c_lflag;
+    	cc_t c_line;	 
+    	cc_t c_cc[NCCS]; 
+    	speed_t c_ispeed;
+    	speed_t c_ospeed;
+    };
+
+    struct termios2 options;
+    ioctl(serial_fd, TCGETS2, &options);
+    options.c_cflag &= ~CBAUD;
+    options.c_cflag |= BOTHER;
+
     options.c_cflag &= ~PARENB;
     options.c_cflag &= ~CSTOPB;
     options.c_cflag &= ~CSIZE;
     options.c_cflag |= CS8;
-    tcsetattr(serial_fd, TCSANOW, &options);
+
+    options.c_ispeed = BAUD_RATE;
+    options.c_ospeed = BAUD_RATE;
+    ioctl(serial_fd, TCSETS2, &options);
 
     return (void*)(intptr_t)serial_fd;
 #endif
