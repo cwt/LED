@@ -18,6 +18,12 @@ except ImportError:
     print("Error: The 'pyserial' library is required. Please install it using 'pip install pyserial'")
     sys.exit(1)
 
+# For custom baud rates on Linux, we may need to perform a little magic.
+if 'linux' in sys.platform:
+    import fcntl
+    import termios
+    import ctypes
+
 # --- Protocol Constants ---
 
 # The baud rate is fixed at 10000 for the device's controller.
@@ -85,6 +91,83 @@ def build_command_packet(mode: str, brightness: str, speed: str) -> List[bytes]:
     ]
 
 
+def _set_custom_baud_rate(fd: int, baudrate: int) -> None:
+    """
+    Sets a non-standard baud rate for a serial port file descriptor.
+
+    This is a workaround for an issue where recent glibc updates have caused
+    pyserial's default method of setting custom baud rates to fail with an
+    'Invalid argument' error. This implementation mirrors the C version by
+    using the termios2 struct and ioctl calls to set the rate directly.
+
+    Args:
+        fd: The file descriptor of the open serial port.
+        baudrate: The desired non-standard baud rate.
+
+    Raises:
+        IOError: If the ioctl calls fail.
+    """
+    # The termios2 struct definition, based on <asm-generic/termbits.h>
+    # NCCS is typically 32 on modern Linux systems.
+    NCCS = 32
+    BOTHER = 0o010000  # From <asm/termbits.h>
+
+    class Termios2(ctypes.Structure):
+        _fields_ = [
+            ("c_iflag", ctypes.c_uint),
+            ("c_oflag", ctypes.c_uint),
+            ("c_cflag", ctypes.c_uint),
+            ("c_lflag", ctypes.c_uint),
+            ("c_line", ctypes.c_ubyte),
+            ("c_cc", ctypes.c_ubyte * NCCS),
+            ("c_ispeed", ctypes.c_uint),
+            ("c_ospeed", ctypes.c_uint),
+        ]
+
+    # Calculate ioctl request numbers for termios2
+    # These definitions are from <asm-generic/ioctl.h>
+    _IOC_NRBITS = 8
+    _IOC_TYPEBITS = 8
+    _IOC_SIZEBITS = 14
+    _IOC_DIRBITS = 2
+    _IOC_WRITE = 1
+    _IOC_READ = 2
+    _IOC_NRSHIFT = 0
+    _IOC_TYPESHIFT = _IOC_NRSHIFT + _IOC_NRBITS
+    _IOC_SIZESHIFT = _IOC_TYPESHIFT + _IOC_TYPEBITS
+    _IOC_DIRSHIFT = _IOC_SIZESHIFT + _IOC_SIZEBITS
+
+    def _IOC(dir, type, nr, size):
+        return (
+            (dir << _IOC_DIRSHIFT) |
+            (type << _IOC_TYPESHIFT) |
+            (nr << _IOC_NRSHIFT) |
+            (size << _IOC_SIZESHIFT)
+        )
+
+    def _IOR(type, nr, size_struct):
+        return _IOC(_IOC_READ, type, nr, ctypes.sizeof(size_struct))
+
+    def _IOW(type, nr, size_struct):
+        return _IOC(_IOC_WRITE, type, nr, ctypes.sizeof(size_struct))
+
+    TCGETS2 = _IOR(ord('T'), 0x2A, Termios2)
+    TCSETS2 = _IOW(ord('T'), 0x2B, Termios2)
+
+    termios2 = Termios2()
+    # Get current settings
+    fcntl.ioctl(fd, TCGETS2, termios2)
+
+    # Set the custom baud rate
+    termios2.c_cflag &= ~termios.CBAUD  # Clear standard baud rate bits
+    termios2.c_cflag |= BOTHER         # Enable custom baud rate divisor
+    termios2.c_ispeed = baudrate
+    termios2.c_ospeed = baudrate
+
+    # Apply the new settings
+    fcntl.ioctl(fd, TCSETS2, termios2)
+
+
 def send_command(serial_port: str, packet: List[bytes], verbose: bool) -> None:
     """
     Opens the serial port and sends the command packet byte by byte.
@@ -99,7 +182,21 @@ def send_command(serial_port: str, packet: List[bytes], verbose: bool) -> None:
     """
     print(f"Connecting to {serial_port} at {BAUD_RATE} baud...")
     # Using a 'with' statement ensures the serial port is automatically closed.
-    with serial.Serial(serial_port, BAUD_RATE, timeout=1) as s:
+    # We open at a standard rate (9600) and then, if on Linux, use our
+    # custom ioctl-based function to set the non-standard rate.
+    with serial.Serial(serial_port, 9600, timeout=1) as s:
+        if 'linux' in sys.platform:
+            try:
+                _set_custom_baud_rate(s.fileno(), BAUD_RATE)
+            except IOError as e:
+                print(f"\nError: Could not set custom baud rate via ioctl.")
+                print(f"Details: {e}")
+                print("This may happen on older kernels. Please check your system configuration.")
+                sys.exit(1)
+        else:
+            # For non-Linux platforms, rely on pyserial's standard implementation
+            s.baudrate = BAUD_RATE
+
         print("Sending command packet...")
         for byte_to_send in packet:
             s.write(byte_to_send)
