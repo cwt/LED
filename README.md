@@ -1,5 +1,7 @@
 # LED Controller for T9 Plus Mini PC
 
+![GitHub License](https://img.shields.io/github/license/cwt/LED)
+
 A command-line utility to control the LED lights on a T9 Plus mini PC. This tool allows you to set different lighting modes, adjust brightness, and control the speed of the effects.
 
 It is written in C and is compilable on both Windows and Linux. A Python version with identical functionality is also included.
